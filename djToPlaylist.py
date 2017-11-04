@@ -77,13 +77,16 @@ def lookup(driver, query):
 			driver.find_element_by_xpath("//*[@id='middleTbl']/tbody/tr/td/table/tbody/tr[2]/td/div[1]/a").click()
 		except:
 			print("Artist not found")
-		#Close the Most Liked Tracklists YEAR menu
+		time.sleep(5)
+		#Click on the 1st menu item (usually closes the Most Liked 2017 Tab)
 		driver.find_element_by_xpath("//*[@id='leftContent']/div[2]/div[1]/a[1]").click()
-		#Open the Most Viewed Tracklists Ever menu
-		#------------------------------ FIX THIS: SOME ARTISTS DON't HAVE A SECTION FOR MOST LIKED TRACKS 2017. Retrieve the Most Viewed Ever from reverse -----------------------------#
-		driver.find_element_by_xpath("//*[@id='leftContent']/div[2]/div[1]/a[4]").click()
-		#Click on the first link 
-		driver.find_element_by_xpath("//*[@id='leftContent']/div[2]/div[1]/div[4]/table/tbody/tr/td/div/a").click()
+		#Click on the second to last menu item (the Most Viewed Tracklists Ever tab)
+		tempElem = driver.find_elements_by_xpath("//*[@id='leftContent']/div[2]/div[1]/a")
+		tempElem[-2].click()
+		#Click on the first link from the Most Viewed Tracklists Ever tab
+		tempElem = driver.find_elements_by_xpath("//*[@id='leftContent']/div[2]/div[1]/div")
+		tempElem = tempElem[-2]
+		tempElem.find_element_by_xpath("table/tbody/tr/td/div/a").click()
 		# Get the date and venue of the set
 		elementChild  = driver.find_element_by_xpath("//*[contains(text(), 'TL date')]")
 		element = elementChild.find_element_by_xpath('../following-sibling::td')
@@ -123,6 +126,13 @@ def lookup(driver, query):
 		playlistName = "Songs from " + query + "'s set at " + venue + ' on ' + date 
 		#Creates a new playlist
 		youtube = get_authenticated_service()
+
+		plName = playlists_list_mine(youtube, part='snippet,contentDetails', mine=True, maxResults=25, onBehalfOfContentOwner='', onBehalfOfContentOwnerChannel='')
+		for elem1 in plName:
+			if(playlistName == elem1):
+				print("There is already a playlist with this name. Exiting \n")
+				return
+
 		try:
 			playlistID = add_playlist(youtube, playlistName, args)
 		except urllib.error.HTTPError as e:
@@ -244,6 +254,18 @@ def youtube_search(query, maxNum):
   #print ('Videos:\n', videos[0])
   return (videos)
 
+ # Sample python code for playlists.list
+def playlists_list_mine(client, **kwargs):
+  # See full sample for function
+  kwargs = remove_empty_kwargs(**kwargs)
+  response = client.playlists().list(
+    **kwargs
+  ).execute()
+  playlistTitles = []
+  for item in response['items']:
+    playlistTitles.append((item['snippet']['title']))
+  return (playlistTitles)
+  #return print_response(response)
 
 
 if __name__=="__main__":
@@ -257,5 +279,4 @@ if __name__=="__main__":
 	DJ = args.DJ
 	os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 	lookup(driver, DJ)
-	time.sleep(4)
 	driver.quit()
