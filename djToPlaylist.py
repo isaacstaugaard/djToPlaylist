@@ -1,29 +1,58 @@
+# -*- coding: utf-8 -*-
+import argparse 
+import google.oauth2.credentials
+import google_auth_oauthlib.flow	
+import httplib2	
+import os	
+import psycopg2		
+import smtplib	
+import sys	
 import time
-from selenium import webdriver
-from bs4 import BeautifulSoup
-import urllib.request
-import argparse 												  #Needed to read the args from cmd line 
+import unicodedata
+import urllib.request	
+import urllib.error
+from apiclient.discovery import build
+from apiclient.errors import HttpError	
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from google_auth_oauthlib.flow import InstalledAppFlow									 			  
 from lxml import html 
-from selenium.webdriver.common.by import By                       #Allows the use of By 
-from selenium.webdriver.support.ui import WebDriverWait			  #Allows for the driver to wait for dadta
-from selenium.webdriver.common.keys import Keys                   #Allows for scrolling down (PGDOWN key)
-from selenium.webdriver.common.action_chains import ActionChains  #Allows for mouseOver
-import smtplib													  #Allows use of email
-import psycopg2
+from oauth2client.client import flow_from_clientsecrets
+from oauth2client.file import Storage
+from oauth2client.tools import argparser, run_flow
+from selenium import webdriver
+from selenium.webdriver.common.by import By                       
+from selenium.webdriver.support.ui import WebDriverWait			 
+from selenium.webdriver.common.keys import Keys                   
+from selenium.webdriver.common.action_chains import ActionChains  
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from selenium.common.exceptions import ElementNotVisibleException
+from selenium.webdriver.chrome.options import Options
+
+# The CLIENT_SECRETS_FILE variable specifies the name of a file that contains
+# the OAuth 2.0 information for this application, including its client_id and
+# client_secret.
+CLIENT_SECRETS_FILE = "../client_secret.json"
+# This OAuth 2.0 access scope allows for full read/write access to the
+# authenticated user's account and requires requests to use an SSL connection.
+SCOPES = ['https://www.googleapis.com/auth/youtube.force-ssl']
+DEVELOPER_KEY = 'AIzaSyDOPvTdX7H5tVlmR6CP-L07hjD0I2gB-ts'
+API_SERVICE_NAME = 'youtube'
+API_VERSION = 'v3'
 
 
-# Email for testing this program is t3std3v3lop3r123@gmail.com, password is t3std3v3lop3r #
+
 def init_driver():
-    driver = webdriver.Chrome()
-    driver.wait = WebDriverWait(driver, 5)
-    return driver
+	chrome_options = Options()
+	chrome_options.add_argument("user-data-dir=C:/Users/GAMER1/AppData/Local/Google/Chrome/User Data/Default");
+	chrome_options.add_argument("--start-maximized");
+	driver = webdriver.Chrome(chrome_options=chrome_options)
+	driver.wait = WebDriverWait(driver, 5)
+	return driver
 
 def lookup(driver, query):
 	driver.get("https://www.1001tracklists.com/")
-	driver.maximize_window()
 	try:
 		#Find the search menu and change the value from tracklists to Djs
 		searchmenu = driver.wait.until(EC.presence_of_element_located(
@@ -31,7 +60,6 @@ def lookup(driver, query):
 		searchmenu.click()
 		time.sleep(.5)
 		driver.find_element_by_xpath("//*[@id='search_selection']/option[3]").click()
-		
 		#Find the search bar and search for the DJ name given into this function
 		box = driver.wait.until(EC.presence_of_element_located(
 			(By.NAME, "main_search")))
@@ -44,15 +72,11 @@ def lookup(driver, query):
 			button = driver.wait.until(EC.visibility_of_element_located(
 				(By.NAME, "btnG")))
 			button.click()
-		
 		#Click on the artists link to go to his page
 		try: 
 			driver.find_element_by_xpath("//*[@id='middleTbl']/tbody/tr/td/table/tbody/tr[2]/td/div[1]/a").click()
 		except:
 			print("Artist not found")
-		
-		#Closes the cookies pop up
-		driver.find_element_by_xpath("//*[@id='cookieMessage']/span").click()
 		#Close the Most Liked Tracklists YEAR menu
 		driver.find_element_by_xpath("//*[@id='leftContent']/div[2]/div[1]/a[1]").click()
 		#Open the Most Viewed Tracklists Ever menu
@@ -60,7 +84,6 @@ def lookup(driver, query):
 		driver.find_element_by_xpath("//*[@id='leftContent']/div[2]/div[1]/a[4]").click()
 		#Click on the first link 
 		driver.find_element_by_xpath("//*[@id='leftContent']/div[2]/div[1]/div[4]/table/tbody/tr/td/div/a").click()
-		
 		# Get the date and venue of the set
 		elementChild  = driver.find_element_by_xpath("//*[contains(text(), 'TL date')]")
 		element = elementChild.find_element_by_xpath('../following-sibling::td')
@@ -80,7 +103,6 @@ def lookup(driver, query):
 			except: 
 				print("No valid link")
 		element.click()
-
 		#Change frames and retrieve the link
 		try: 
 			driver.switch_to_frame(driver.find_element_by_class_name('scWidget1'))
@@ -95,110 +117,145 @@ def lookup(driver, query):
 				print("LINK: ", link, "\n")
 			except:
 				print("Could not change frames and retrieve link")
-
 		time.sleep(3)
 		artists = []
 		songs = []
+		playlistName = "Songs from " + query + "'s set at " + venue + ' on ' + date 
+		#Creates a new playlist
+		youtube = get_authenticated_service()
+		try:
+			playlistID = add_playlist(youtube, playlistName, args)
+		except urllib.error.HTTPError as e:
+			print ('An HTTP error %d occurred:\n%s' % (e.resp.status, e.content))
 		driver.switch_to.default_content()
+		#Loop through the songs from the set --> add song/artist to respective list --> youtube API to search for videoID --> add video to playlist
 		for elem in driver.find_elements_by_xpath("//*[@itemprop='tracks']"):
 			elemList = elem.find_elements_by_tag_name("meta")
-			toPrint = str(elemList[0].get_attribute("content").encode("utf-8"))[2:-1]
-			splitList = toPrint.split(" - ")
+			toSplit = elemList[0].get_attribute("content")
+			splitList = toSplit.split(" - ")
+			query = splitList[0] + ' ' + splitList[1]
 			artists.append(splitList[0])
 			songs.append(splitList[1])
-			#Prints the artist/song line by line
-			#print (toPrint.split(" - "))
-		print("ARTISTS: ", artists, "\n")
-		print("SONGS: ", songs, "\n")
-
-		j = 0
+			#Search on youtube for the video
+			videoID = youtube_search(query, 10)
+			#If there is no video for the song, skip it
+			if not videoID:
+				continue
+			#Appends item to the playlist
+			playlist_items_insert(youtube,{'snippet.playlistId': playlistID,'snippet.resourceId.kind': 'youtube#video','snippet.resourceId.videoId': videoID[0] ,'snippet.position': ''}, part='snippet',onBehalfOfContentOwner='')
 		sizeOfPlaylist = len(artists)
-
-		#Go to youtube.com
-
-		###############################################################################################################################
-
 		time.sleep(5)
-		# while(j < sizeOfPlaylist):
-		# 	driver.get("https://www.youtube.com/")
-		# 	box = driver.wait.until(EC.presence_of_element_located(
-		# 		(By.NAME, "search_query")))
-		# 	button = driver.wait.until(EC.element_to_be_clickable(
-		# 		(By.ID, "search-icon-legacy")))
-		# 	box.send_keys(artists[j] + " " + songs[j])
-		# 	try:
-		# 		button.click()
-		# 	except ElementNotVisibleException:
-		# 		button = driver.wait.until(EC.visibility_of_element_located(
-		# 			(By.NAME, "btnG")))
-		# 		button.click()
-		# 	time.sleep(3)
-		# 	j+=1
-
-
 	except TimeoutException:
 		print("Could not process your request")
 
-def lookupYT(driver,query):
-		driver.get("https://www.youtube.com/")
-		driver.maximize_window()
-		time.sleep(3)
-		try:
-			# Sign in to youtube account
-			signIn = driver.find_element_by_xpath("//*[@id='buttons']/ytd-button-renderer[2]/a")
-			signIn.click()
-			time.sleep(3)
-			emailQuery = driver.find_element_by_xpath("//*[@id='identifierId']")
-			emailQuery.send_keys("t3std3v3lop3r123@gmail.com")
-			time.sleep(1)
-			emailQuery.send_keys(Keys.ENTER)
-			time.sleep(3)
+def get_authenticated_service():
+  flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
+  credentials = flow.run_console()
+  return build(API_SERVICE_NAME, API_VERSION, credentials = credentials)
 
-			passQuery = driver.find_element_by_xpath("//*[@id='password']/div[1]/div/div[1]/input")
-			passQuery.send_keys("t3std3v3lop3r")
-			time.sleep(3)
-			passQuery.send_keys(Keys.ENTER)
-			time.sleep(5)
-			
-			# Go to user's channel
-			accButton = driver.find_element_by_xpath("//*[@id='img']")
-			accButton.click()
-			time.sleep(3)
-			accButton = driver.find_element_by_xpath("//*[@id='endpoint']/paper-item/div/yt-icon")
-			accButton.click()
-			time.sleep(5)
+def add_playlist(youtube, playlistName, args):
+	body = dict(snippet=dict(title=playlistName, description=args.description),status=dict(privacyStatus='private'))
+	#body = dict(snippet=dict(title=args.DJ, description=args.description),status=dict(privacyStatus='private')) 
+	playlists_insert_response = youtube.playlists().insert(part='snippet,status',body=body).execute()
+	print ('New playlist ID: %s' % playlists_insert_response['id'])
+	return playlists_insert_response['id']
 
-			# #Create a new playlist
-			# button = driver.find_element_by_xpath("//*[@id='edit-buttons']/ytd-button-renderer[1]/a")
-			# button.click()
-			# time.sleep(3)
-			# button = driver.find_element_by_xpath("//*[@id='channel-navigation-menu']/li[3]/a/span")
-			# button.click()
-			# time.sleep(3)
-			# button = driver.find_element_by_xpath("//*[@id='playlists-tab-create-playlist-widget']/button")
-			# button.click()
-			# time.sleep(3)
-			# playlistQuery = driver.find_element_by_xpath("//*[@id='playlists-tab-create-playlist-dialog']/form/div[1]/label/h2")
-			# playlistQuery = playlistQuery.find_element_by_xpath('../span[1]/span[1]/input[1]')
-			# playlistQuery.send_keys("Marshmello EDC")
-			# time.sleep(3)
-			# playlistQuery.send_keys(Keys.ENTER)
+def print_response(response):
+	print(response)	
 
-			#If already has playlist... 
+# Build a resource based on a list of properties given as key-value pairs.
+# Leave properties with empty values out of the inserted resource.
+def build_resource(properties):
+  resource = {}
+  for p in properties:
+    # Given a key like "snippet.title", split into "snippet" and "title", where
+    # "snippet" will be an object and "title" will be a property in that object.
+    prop_array = p.split('.')
+    ref = resource
+    for pa in range(0, len(prop_array)):
+      is_array = False
+      key = prop_array[pa]
+      # For properties that have array values, convert a name like
+      # "snippet.tags[]" to snippet.tags, and set a flag to handle
+      # the value as an array.
+      if key[-2:] == '[]':
+        key = key[0:len(key)-2:]
+        is_array = True
+      if pa == (len(prop_array) - 1):
+        # Leave properties without values out of inserted resource.
+        if properties[p]:
+          if is_array:
+            ref[key] = properties[p].split(',')
+          else:
+            ref[key] = properties[p]
+      elif key not in ref:
+        # For example, the property is "snippet.title", but the resource does
+        # not yet have a "snippet" object. Create the snippet object here.
+        # Setting "ref = ref[key]" means that in the next time through the
+        # "for pa in range ..." loop, we will be setting a property in the
+        # resource's "snippet" object.
+        ref[key] = {}
+        ref = ref[key]
+      else:
+        # For example, the property is "snippet.description", and the resource
+        # already has a "snippet" object.
+        ref = ref[key]
+  return resource
 
-			#Add songs to playlist 
-			
+# Remove keyword arguments that are not set
+def remove_empty_kwargs(**kwargs):
+  good_kwargs = {}
+  if kwargs is not None:
+    for key, value in kwargs.items():
+      if value:
+        good_kwargs[key] = value
+  return good_kwargs
 
-		except:
-			print("could not find the playlistquery")
+def playlist_items_insert(client, properties, **kwargs):
+  resource = build_resource(properties)
+  kwargs = remove_empty_kwargs(**kwargs)
+  response = client.playlistItems().insert(
+    body=resource,
+    **kwargs
+  ).execute()
+  #return print_response(response)
+
+def youtube_search(query, maxNum):
+  youtube = build(API_SERVICE_NAME, API_VERSION,
+    developerKey=DEVELOPER_KEY)
+  # Call the search.list method to retrieve results matching the specified
+  # query term.
+  search_response = youtube.search().list(
+    q=query,
+    part='id,snippet',
+    maxResults=10
+  ).execute()
+  videos = []
+  # Add each result to the appropriate list, and then display the lists of
+  # matching videos, channels, and playlists.
+  for search_result in search_response.get('items', []):
+    if search_result['id']['kind'] == 'youtube#video':
+      videos.append('%s' % (search_result['id']['videoId']))
+      break;
+    elif search_result['id']['kind'] == 'youtube#channel':
+    	continue;
+    elif search_result['id']['kind'] == 'youtube#playlist':
+    	continue;
+  #print ('Videos:\n', videos[0])
+  return (videos)
+
+
 
 if __name__=="__main__":
 	argparser = argparse.ArgumentParser()
 	argparser.add_argument("DJ",help = 'DJ Name')
+	argparser.add_argument('--description',
+	  default='All the songs from the setlist',
+	  help='The description of the new playlist.')
 	driver = init_driver()
 	args = argparser.parse_args()
 	DJ = args.DJ
-	lookupYT(driver, DJ)
-	#lookup(driver, DJ)
-	#time.sleep(4)
+	os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+	lookup(driver, DJ)
+	time.sleep(4)
 	driver.quit()
