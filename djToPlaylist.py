@@ -55,11 +55,23 @@ def init_driver():
 
 def lookup(driver, query):
 	venueAndDate = tracklistsSite(driver,query)
+	try:
+		create_table(query.replace(" ",""))
+	except:
+		print("Table already exists in SQL -- might need to call a transaction rollback\n")
 	time.sleep(3)
 	linkDescription = getLink(driver,query)
 	time.sleep(3)
-	getDataAndMakePlaylist(driver, venueAndDate, linkDescription, query)
+	artistsAndSongs = getDataAndMakePlaylist(driver, venueAndDate, linkDescription, query)
 	time.sleep(4)
+
+	numToAdd = len(artistsAndSongs[0])
+	incrementer = 0
+	while(incrementer < numToAdd):
+		insert_table(query.replace(" ",""), artistsAndSongs[0], artistsAndSongs[1], incrementer)
+		incrementer = incrementer + 1
+
+
 
 
 
@@ -201,7 +213,10 @@ def getDataAndMakePlaylist(driver, venuedate, link, query):
 			continue
 		#Appends item to the playlist
 		playlist_items_insert(youtube,{'snippet.playlistId': playlistID,'snippet.resourceId.kind': 'youtube#video','snippet.resourceId.videoId': videoID[0] ,'snippet.position': ''}, part='snippet',onBehalfOfContentOwner='')
-	sizeOfPlaylist = len(artists)
+	artistsAndSongs = []
+	artistsAndSongs.append(artists)
+	artistsAndSongs.append(songs)
+	return artistsAndSongs
 
 
 
@@ -223,6 +238,43 @@ def add_playlist(youtube, playlistName, link, args):
 
 def print_response(response):
 	print(response)	
+
+
+
+def create_table(name):
+	cur = conn.cursor()
+	cur.execute('''CREATE TABLE {tab}(ARTIST TEXT NOT NULL, SONG TEXT NOT NULL);'''.format(tab=name))
+	print ("Table created successfully")
+	cur.close()
+	conn.commit()
+
+
+
+def delete_table(name):
+	cur = conn.cursor()
+	cur.execute('''DELETE FROM {tab};'''.format(tab=name))
+	print("Table deleted successfully")
+	cur.close()
+	conn.commit()
+
+
+
+def drop_table(name):
+	cur = conn.cursor()
+	cur.execute('''DROP TABLE {tab};'''.format(tab=name))
+	print("Table dropped successfully")
+	cur.close()
+	conn.commit()
+
+
+
+def insert_table(name, artists, songs, index):
+	cur = conn.cursor()
+	cur.execute("INSERT INTO {tab} (ARTIST, SONG) \
+  		VALUES (%s, %s)".format(tab=name), (artists[index], songs[index]));
+	#print("Value inserted into table")
+	cur.close()
+	conn.commit()
 
 
 
@@ -333,12 +385,12 @@ def playlists_list_mine(client, **kwargs):
 if __name__=="__main__":
 	argparser = argparse.ArgumentParser()
 	argparser.add_argument("DJ",help = 'DJ Name')
-	#argparser.add_argument('--description',
-	#  default='All the songs from the setlist',
-	#  help='The description of the new playlist.')
 	driver = init_driver()
 	args = argparser.parse_args()
 	DJ = args.DJ
+	conn = psycopg2.connect(database="postgres", user = "postgres", password = "", host = "127.0.0.1", port = "5432")
+	print ("PostgreSQL: Opened database successfully")
 	os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 	lookup(driver, DJ)
+	conn.close()
 	driver.quit()
